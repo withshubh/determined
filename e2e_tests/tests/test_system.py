@@ -1,6 +1,5 @@
 import json
 import operator
-import os
 import subprocess
 import tempfile
 import time
@@ -181,147 +180,6 @@ def run_gc_checkpoints_test(checkpoint_storage: Dict[str, str]) -> None:
 
 
 @pytest.mark.e2e_cpu  # type: ignore
-def test_experiment_delete() -> None:
-    subprocess.check_call(["det", "-m", conf.make_master_url(), "user", "whoami"])
-
-    experiment_id = exp.run_basic_test(
-        conf.fixtures_path("no_op/single.yaml"), conf.fixtures_path("no_op"), 1
-    )
-
-    subprocess.check_call(
-        ["det", "-m", conf.make_master_url(), "experiment", "delete", str(experiment_id), "--yes"],
-        env={**os.environ, "DET_ADMIN": "1"},
-    )
-
-    # "det experiment describe" call should fail, because the
-    # experiment is no longer in the database.
-    with pytest.raises(subprocess.CalledProcessError):
-        subprocess.check_call(
-            ["det", "-m", conf.make_master_url(), "experiment", "describe", str(experiment_id)]
-        )
-
-
-@pytest.mark.e2e_cpu  # type: ignore
-def test_experiment_archive_unarchive() -> None:
-    experiment_id = exp.create_experiment(
-        conf.fixtures_path("no_op/single.yaml"), conf.fixtures_path("no_op"), ["--paused"]
-    )
-
-    describe_args = [
-        "det",
-        "-m",
-        conf.make_master_url(),
-        "experiment",
-        "describe",
-        "--json",
-        str(experiment_id),
-    ]
-
-    # Check that the experiment is initially unarchived.
-    infos = json.loads(subprocess.check_output(describe_args))
-    assert len(infos) == 1
-    assert not infos[0]["archived"]
-
-    # Check that archiving a non-terminal experiment fails, then terminate it.
-    with pytest.raises(subprocess.CalledProcessError):
-        subprocess.check_call(
-            ["det", "-m", conf.make_master_url(), "experiment", "archive", str(experiment_id)]
-        )
-    subprocess.check_call(
-        ["det", "-m", conf.make_master_url(), "experiment", "cancel", str(experiment_id)]
-    )
-
-    # Check that we can archive and unarchive the experiment and see the expected effects.
-    subprocess.check_call(
-        ["det", "-m", conf.make_master_url(), "experiment", "archive", str(experiment_id)]
-    )
-    infos = json.loads(subprocess.check_output(describe_args))
-    assert len(infos) == 1
-    assert infos[0]["archived"]
-
-    subprocess.check_call(
-        ["det", "-m", conf.make_master_url(), "experiment", "unarchive", str(experiment_id)]
-    )
-    infos = json.loads(subprocess.check_output(describe_args))
-    assert len(infos) == 1
-    assert not infos[0]["archived"]
-
-
-@pytest.mark.e2e_cpu  # type: ignore
-def test_create_test_mode() -> None:
-    # test-mode should succeed with a valid experiment.
-    command = [
-        "det",
-        "-m",
-        conf.make_master_url(),
-        "experiment",
-        "create",
-        "--test-mode",
-        conf.fixtures_path("mnist_pytorch/adaptive_short.yaml"),
-        conf.tutorials_path("mnist_pytorch"),
-    ]
-    output = subprocess.check_output(command, universal_newlines=True)
-    assert "Model definition test succeeded" in output
-
-    # test-mode should fail when an error is introduced into the trial
-    # implementation.
-    command = [
-        "det",
-        "-m",
-        conf.make_master_url(),
-        "experiment",
-        "create",
-        "--test-mode",
-        conf.fixtures_path("trial_error/const.yaml"),
-        conf.fixtures_path("trial_error"),
-    ]
-    with pytest.raises(subprocess.CalledProcessError):
-        subprocess.check_call(command)
-
-
-@pytest.mark.e2e_cpu  # type: ignore
-def test_trial_logs() -> None:
-    experiment_id = exp.run_basic_test(
-        conf.fixtures_path("no_op/single.yaml"), conf.fixtures_path("no_op"), 1
-    )
-    trial_id = exp.experiment_trials(experiment_id)[0]["id"]
-    subprocess.check_call(["det", "-m", conf.make_master_url(), "trial", "logs", str(trial_id)])
-    subprocess.check_call(
-        ["det", "-m", conf.make_master_url(), "trial", "logs", "--head", "10", str(trial_id)],
-    )
-    subprocess.check_call(
-        ["det", "-m", conf.make_master_url(), "trial", "logs", "--tail", "10", str(trial_id)],
-    )
-
-
-@pytest.mark.e2e_cpu  # type: ignore
-def test_labels() -> None:
-    experiment_id = exp.create_experiment(
-        conf.fixtures_path("no_op/single-one-short-step.yaml"), conf.fixtures_path("no_op"), None
-    )
-
-    label = "__det_test_dummy_label__"
-
-    # Add a label and check that it shows up.
-    subprocess.check_call(
-        ["det", "-m", conf.make_master_url(), "e", "label", "add", str(experiment_id), label]
-    )
-    output = subprocess.check_output(
-        ["det", "-m", conf.make_master_url(), "e", "describe", str(experiment_id)]
-    ).decode()
-    assert label in output
-
-    # Remove the label and check that it doesn't show up.
-    subprocess.check_call(
-        ["det", "-m", conf.make_master_url(), "e", "label", "remove", str(experiment_id), label]
-    )
-    output = subprocess.check_output(
-        ["det", "-m", conf.make_master_url(), "e", "describe", str(experiment_id)]
-    ).decode()
-    assert label not in output
-
-
-@pytest.mark.e2e_cpu  # type: ignore
 def test_end_to_end_adaptive() -> None:
     exp_id = exp.run_basic_test(
         conf.fixtures_path("mnist_pytorch/adaptive_short.yaml"),
@@ -443,20 +301,6 @@ def test_model_registry() -> None:
 
 
 @pytest.mark.e2e_cpu  # type: ignore
-def test_log_null_bytes() -> None:
-    config_obj = conf.load_config(conf.fixtures_path("no_op/single.yaml"))
-    config_obj["hyperparameters"]["write_null"] = True
-    config_obj["max_restarts"] = 0
-    config_obj["searcher"]["max_length"] = {"batches": 1}
-    experiment_id = exp.run_basic_test_with_temp_config(config_obj, conf.fixtures_path("no_op"), 1)
-
-    trials = exp.experiment_trials(experiment_id)
-    assert len(trials) == 1
-    logs = exp.trial_logs(trials[0]["id"])
-    assert len(logs) > 0
-
-
-@pytest.mark.e2e_cpu  # type: ignore
 def test_graceful_trial_termination() -> None:
     config_obj = conf.load_config(conf.fixtures_path("no_op/grid-graceful-trial-termination.yaml"))
     exp.run_basic_test_with_temp_config(config_obj, conf.fixtures_path("no_op"), 2)
@@ -538,21 +382,6 @@ def test_perform_initial_validation() -> None:
         config, conf.fixtures_path("no_op"), 1, has_zeroth_step=True
     )
     exp.assert_performed_initial_validation(exp_id)
-
-
-@pytest.mark.parallel  # type: ignore
-def test_distributed_logging() -> None:
-    config = conf.load_config(conf.fixtures_path("pytorch_no_op/const.yaml"))
-    config = conf.set_slots_per_trial(config, 8)
-    config = conf.set_max_length(config, {"batches": 1})
-
-    e_id = exp.run_basic_test_with_temp_config(config, conf.fixtures_path("pytorch_no_op"), 1)
-    t_id = exp.experiment_trials(e_id)[0]["id"]
-
-    for i in range(config["resources"]["slots_per_trial"]):
-        assert exp.check_if_string_present_in_trial_logs(
-            t_id, "finished train_batch for rank {}".format(i)
-        )
 
 
 @pytest.mark.e2e_cpu  # type: ignore
