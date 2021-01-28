@@ -15,6 +15,8 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/determined-ai/determined/master/internal/db"
+	"github.com/determined-ai/determined/master/internal/sproto"
+	"github.com/determined-ai/determined/master/pkg/actor"
 	"github.com/determined-ai/determined/master/pkg/model"
 	"github.com/determined-ai/determined/proto/pkg/apiv1"
 )
@@ -22,6 +24,7 @@ import (
 const (
 	// nolint:gosec // These are not potential hardcoded credentials.
 	gatewayTokenHeader = "grpcgateway-authorization"
+	taskIDHeader       = "x-task-id"
 	userTokenHeader    = "x-user-token"
 	cookieName         = "auth"
 )
@@ -40,6 +43,23 @@ var (
 	// ErrPermissionDenied notifies that the user does not have permission to access the method.
 	ErrPermissionDenied = status.Error(codes.PermissionDenied, "user does not have permission")
 )
+
+// ValidateTaskID validates if the task ID exists.
+func ValidateTaskID(ctx context.Context, rm *actor.Ref) bool {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return false
+	}
+	tokens := md[taskIDHeader]
+	if len(tokens) == 0 {
+		return false
+	}
+
+	taskID := sproto.TaskID(tokens[0])
+	taskSummary := rm.System().Ask(
+		rm, sproto.GetTaskSummary{ID: &taskID}).GetOrElse(nil)
+	return taskSummary != nil
+}
 
 // GetUser returns the currently logged in user.
 func GetUser(ctx context.Context, d *db.PgDB) (*model.User, *model.UserSession, error) {
@@ -85,13 +105,15 @@ func streamAuthInterceptor(db *db.PgDB) grpc.StreamServerInterceptor {
 	}
 }
 
-func unaryAuthInterceptor(db *db.PgDB) grpc.UnaryServerInterceptor {
+func unaryAuthInterceptor(db *db.PgDB, rm *actor.Ref) grpc.UnaryServerInterceptor {
 	return func(
 		ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler,
 	) (resp interface{}, err error) {
 		if !unauthenticatedMethods[info.FullMethod] {
-			if _, _, err := GetUser(ctx, db); err != nil {
-				return nil, err
+			if ok := ValidateTaskID(ctx, rm); !ok {
+				if _, _, err := GetUser(ctx, db); err != nil {
+					return nil, err
+				}
 			}
 		}
 		return handler(ctx, req)

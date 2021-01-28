@@ -228,6 +228,7 @@ func TrialEnvVars(t TaskSpec, rendezvousPorts []string, tPortOffset int) map[str
 
 	envVars := defaultEnvVars()
 	envVars["DET_EXPERIMENT_ID"] = fmt.Sprintf("%d", exp.InitialWorkload.ExperimentID)
+	envVars["DET_TASK_ID"] = t.TaskID
 	envVars["DET_TRIAL_ID"] = fmt.Sprintf("%d", exp.InitialWorkload.TrialID)
 	envVars["DET_TRIAL_SEED"] = fmt.Sprintf("%d", exp.TrialSeed)
 	envVars["DET_EXPERIMENT_CONFIG"] = jsonify(exp.ExperimentConfig)

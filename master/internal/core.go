@@ -188,7 +188,7 @@ func (m *Master) startServers(ctx context.Context, cert *tls.Certificate) error 
 		}()
 	}
 	start("gRPC server", func() error {
-		srv := grpc.NewGRPCServer(m.db, &apiServer{m: m})
+		srv := grpc.NewGRPCServer(m.db, m.rm, &apiServer{m: m})
 		// We should defer srv.Stop() here, but cmux does not unblock accept calls when underlying
 		// listeners close and grpc-go depends on cmux unblocking and closing, Stop() blocks
 		// indefinitely when using cmux.

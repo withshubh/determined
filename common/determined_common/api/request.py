@@ -85,9 +85,11 @@ def maybe_upgrade_ws_scheme(master_address: str) -> str:
 
 
 def add_token_to_headers(headers: Dict[str, str]) -> Dict[str, str]:
-    token = authentication.Authentication.instance().get_session_token()
-
-    return {**headers, "Authorization": "Bearer {}".format(token)}
+    task_id = authentication.Authentication.instance().get_task_id()
+    if task_id == "":
+        token = authentication.Authentication.instance().get_session_token()
+        return {**headers, "Authorization": "Bearer {}".format(token)}
+    return {**headers, "Grpc-Metadata-x-task-id": task_id}
 
 
 def do_request(

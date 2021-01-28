@@ -19,13 +19,14 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/determined-ai/determined/master/internal/db"
+	"github.com/determined-ai/determined/master/pkg/actor"
 	proto "github.com/determined-ai/determined/proto/pkg/apiv1"
 )
 
 const jsonPretty = "application/json+pretty"
 
 // NewGRPCServer creates a Determined gRPC service.
-func NewGRPCServer(db *db.PgDB, srv proto.DeterminedServer) *grpc.Server {
+func NewGRPCServer(db *db.PgDB, rm *actor.Ref, srv proto.DeterminedServer) *grpc.Server {
 	logger := logrus.NewEntry(logrus.StandardLogger())
 	opts := []grpclogrus.Option{
 		grpclogrus.WithLevels(grpcCodeToLogrusLevel),
@@ -45,7 +46,7 @@ func NewGRPCServer(db *db.PgDB, srv proto.DeterminedServer) *grpc.Server {
 					return status.Errorf(codes.Internal, "%s", p)
 				},
 			)),
-			unaryAuthInterceptor(db),
+			unaryAuthInterceptor(db, rm),
 		)),
 	)
 	proto.RegisterDeterminedServer(grpcS, srv)
