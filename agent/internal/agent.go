@@ -16,6 +16,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+
 	"github.com/docker/docker/api/types/container"
 	"github.com/gorilla/websocket"
 	"github.com/labstack/echo"
@@ -430,6 +432,8 @@ func runAPIServer(options Options, system *actor.System) error {
 	server.Any("/debug/pprof/profile", echo.WrapHandler(http.HandlerFunc(pprof.Profile)))
 	server.Any("/debug/pprof/symbol", echo.WrapHandler(http.HandlerFunc(pprof.Symbol)))
 	server.Any("/debug/pprof/trace", echo.WrapHandler(http.HandlerFunc(pprof.Trace)))
+
+	server.Any("/metrics", echo.WrapHandler(promhttp.Handler()))
 
 	bindAddr := fmt.Sprintf("%s:%d", options.BindIP, options.BindPort)
 	logrus.Infof("starting agent server on [%s]", bindAddr)
