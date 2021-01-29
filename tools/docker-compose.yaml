@@ -3,6 +3,8 @@ version: "3.7"
 services:
   determined-db:
     image: postgres:10.14
+    volumes:
+      - determined-db-volume:/var/lib/postgresql/data
     ports:
       - 5432:5432
     restart: always
@@ -22,3 +24,8 @@ services:
       discovery.type: 'single-node'
       cluster.routing.allocation.disk.threshold_enabled: 'false'
       logger.level: 'WARN'
+    logging:
+      driver: none
+
+volumes:
+  determined-db-volume: {}

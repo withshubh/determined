@@ -1,4 +1,5 @@
 description: mnist_pytorch_const
+max_restarts: 0
 data:
   url: https://s3-us-west-2.amazonaws.com/determined-ai-test-data/pytorch_mnist.tar.gz
 hyperparameters:
@@ -12,6 +13,6 @@ searcher:
   name: single
   metric: validation_loss
   max_length:
-      batches: 937 #60,000 training images with batch size 64
+      batches: 107 #60,000 training images with batch size 64
   smaller_is_better: true
 entrypoint: model_def:MNistTrial

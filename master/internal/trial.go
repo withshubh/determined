@@ -270,6 +270,12 @@ func newTrial(
 }
 
 func (t *trial) Receive(ctx *actor.Context) error {
+	senderAddr := actor.Addr("")
+	if ctx.Sender() != nil {
+		senderAddr = ctx.Sender().Address()
+	}
+	ctx.Log().Infof("received actor message type %T, from %v", ctx.Message(), senderAddr)
+
 	switch msg := ctx.Message().(type) {
 	case actor.PreStart:
 		ctx.AddLabel("experiment-id", t.experiment.ID)
