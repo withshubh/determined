@@ -222,7 +222,7 @@ FROM (
                        (SELECT v.metrics
                         FROM validations v
                         WHERE v.trial_id = t.id AND v.state = 'COMPLETED'
-                        ORDER BY v.step_id DESC
+                        ORDER BY v.total_batch DESC
                         LIMIT 1
                        ) AS latest_validation_metrics,
                        (SELECT count(*)
@@ -239,12 +239,12 @@ FROM (
                        ) AS best_validation_metric,
                        (SELECT row_to_json(bc)
                         FROM (
-                            SELECT c.id, c.uuid, c.trial_id, c.step_id, c.state,
+                            SELECT c.id, c.uuid, c.trial_id, c.total_batch, c.state,
                                    c.start_time, c.end_time, c.resources, c.metadata,
                                    (v.metrics->'validation_metrics'
                                              ->>const.metric_name)::float8 AS validation_metric
                             FROM checkpoints c LEFT JOIN validations v
-                            ON c.trial_id = v.trial_id AND c.step_id = v.step_id, const
+                            ON c.trial_id = v.trial_id AND c.total_batch = v.total_batch, const
                             WHERE c.trial_id = t.id
                               AND c.state = 'COMPLETED'
                               AND v.state = 'COMPLETED'
@@ -363,16 +363,16 @@ FROM (
                      (SELECT row_to_json(c)
                       FROM (
                           SELECT c.end_time, c.id, c.metadata, c.resources, c.start_time, c.state,
-                                 c.step_id, c.trial_id, c.uuid
+                                 c.total_batch, c.trial_id, c.uuid
                           FROM checkpoints c
-                          WHERE c.trial_id = t.id AND c.step_id = s.id
+                          WHERE c.trial_id = t.id AND c.total_batch = s.total_batch
                       ) c) AS checkpoint,
                      (SELECT row_to_json(v)
                       FROM (
-                          SELECT v.end_time, v.id, v.metrics, v.start_time, v.state, v.step_id,
+                          SELECT v.end_time, v.id, v.metrics, v.start_time, v.state, v.total_batch,
                                  v.trial_id
                           FROM validations v
-                          WHERE v.trial_id = t.id AND v.step_id = s.id
+                          WHERE v.trial_id = t.id AND v.total_batch = s.total_batch
                       ) v) AS validation
                      FROM steps s
                      WHERE s.trial_id = t.id
@@ -437,7 +437,7 @@ FROM (
                 -- We can't use a computed column in a WHERE clause for the same query, which we
                 -- would like to do here with the "steps" column, so do this subquery.
                 SELECT * FROM (
-                    SELECT c.id, c.trial_id, c.step_id, c.state, c.start_time, c.end_time, c.uuid,
+                    SELECT c.id, c.trial_id, c.total_batch, c.state, c.start_time, c.end_time, c.uuid,
                            c.resources, c.metadata,
                            (SELECT row_to_json(s)
                             FROM (
@@ -446,13 +446,13 @@ FROM (
                                     (SELECT row_to_json(v)
                                     FROM (
                                         SELECT v.end_time, v.id, v.metrics, v.start_time,
-                                            v.state, v.step_id, v.trial_id
+                                            v.state, v.total_batch, v.trial_id
                                         FROM validations v
-                                        WHERE v.trial_id = s.trial_id AND v.step_id = s.id
+                                        WHERE v.trial_id = s.trial_id AND v.total_batch = s.total_batch
                                     ) v
                                     ) AS validation
                                 FROM steps s
-                                WHERE s.id = c.step_id AND s.trial_id = c.trial_id
+                                WHERE s.total_batch = c.total_batch AND s.trial_id = c.trial_id
                             ) s
                            ) AS step
                     FROM checkpoints c, trials t, const
@@ -540,16 +540,16 @@ FROM (
                      (SELECT row_to_json(c)
                       FROM (
                           SELECT c.end_time, c.id, c.metadata, c.resources, c.start_time, c.state,
-                                 c.step_id, c.trial_id, c.uuid
+                                 c.total_batch, c.trial_id, c.uuid
                           FROM checkpoints c
-                          WHERE c.trial_id = t.id AND c.step_id = s.id
+                          WHERE c.trial_id = t.id AND c.total_batch = s.total_batch
                       ) c) AS checkpoint,
                      (SELECT row_to_json(v)
                       FROM (
-                          SELECT v.end_time, v.id, v.metrics, v.start_time, v.state, v.step_id,
+                          SELECT v.end_time, v.id, v.metrics, v.start_time, v.state, v.total_batch,
                                  v.trial_id
                           FROM validations v
-                          WHERE v.trial_id = t.id AND v.step_id = s.id
+                          WHERE v.trial_id = t.id AND v.total_batch = s.total_batch
                       ) v) AS validation
                      FROM steps s
                      WHERE s.trial_id = t.id
@@ -1055,10 +1055,10 @@ WITH const AS (
                ) AS trial_rank,
                rank() OVER (
                    PARTITION BY trial_id
-                   ORDER BY step_id DESC
+                   ORDER BY total_batch DESC
                ) AS trial_order_rank
         FROM (
-            SELECT c.id, c.trial_id, c.step_id, c.state, c.start_time, c.end_time, c.uuid,
+            SELECT c.id, c.trial_id, c.total_batch, c.state, c.start_time, c.end_time, c.uuid,
                    c.resources, c.metadata,
                    (SELECT row_to_json(s)
                     FROM (
@@ -1067,13 +1067,13 @@ WITH const AS (
                             (SELECT row_to_json(v)
                             FROM (
                                 SELECT v.end_time, v.id, v.metrics, v.start_time,
-                                    v.state, v.step_id, v.trial_id
+                                    v.state, v.total_batch, v.trial_id
                                     FROM validations v
-                                    WHERE v.trial_id = t.id AND v.step_id = s.id
+                                    WHERE v.trial_id = t.id AND v.total_batch = s.total_batch
                                 ) v
                                ) AS validation
                         FROM steps s
-                        WHERE s.id = c.step_id AND s.trial_id = c.trial_id
+                        WHERE s.total_batch = c.total_batch AND s.trial_id = c.trial_id
                     ) s
                    ) AS step,
                    -- We later filter out any checkpoints with any corresponding warm start
@@ -1197,24 +1197,24 @@ WHERE id = :id`, setClause(toUpdate)), trial)
 
 // RollBackTrial deletes from the database all steps, checkpoints, and validations for the trial
 // that correspond to steps past lastStep.
-func (db *PgDB) RollBackTrial(id int, lastStep int) error {
+func (db *PgDB) RollBackTrial(id int, totalBatch int) error {
 	// This delete cascades to checkpoints and validations.
 	_, err := db.sql.Exec(`
 DELETE FROM steps
-WHERE trial_id = $1 AND id > $2
-`, id, lastStep)
+WHERE trial_id = $1 AND total_batch > $2
+`, id, totalBatch)
 	if err != nil {
-		return errors.Wrapf(err, "error rolling back trial %v to step %v", id, lastStep)
+		return errors.Wrapf(err, "error rolling back trial %v to step %v", id, totalBatch)
 	}
 
 	// This explicitly deletes any unfinished validations for the current step. These can occur
 	// any time we checkpoint before we validate.
 	_, err = db.sql.Exec(`
 DELETE FROM validations
-WHERE trial_id = $1 AND step_id = $2 AND state != 'COMPLETED'
-`, id, lastStep)
+WHERE trial_id = $1 AND total_batch = $2 AND state != 'COMPLETED'
+`, id, totalBatch)
 	if err != nil {
-		return errors.Wrapf(err, "error rolling back vals for trial %v on step %v", id, lastStep)
+		return errors.Wrapf(err, "error rolling back vals for trial %v on step %v", id, totalBatch)
 	}
 	return nil
 }
@@ -1289,18 +1289,18 @@ FROM (
                         FROM (
                             SELECT v.end_time, v.id, v.metrics, v.state, v.start_time
                             FROM validations v
-                            WHERE v.trial_id = t.id AND v.step_id = s.id AND v.metrics IS NOT NULL
+                            WHERE v.trial_id = t.id AND v.total_batch = s.total_batch AND v.metrics IS NOT NULL
                         ) r4
                        ) AS validation,
                        (SELECT row_to_json(r5)
                         FROM (
-                            SELECT c.id, c.trial_id, c.step_id, c.state, c.start_time,
+                            SELECT c.id, c.trial_id, c.total_batch, c.state, c.start_time,
                                    c.end_time, c.uuid, c.resources, c.metadata,
                                    (v.metrics->'validation_metrics'
                                              ->>const.metric_name)::float8 AS validation_metric
                             FROM checkpoints c LEFT JOIN validations v
-                            ON c.trial_id = v.trial_id AND c.step_id = v.step_id, const
-                            WHERE c.trial_id = t.id AND c.step_id = s.id
+                            ON c.trial_id = v.trial_id AND c.total_batch = v.total_batch, const
+                            WHERE c.trial_id = t.id AND c.total_batch = s.total_batch
                        ) r5) AS checkpoint
                 FROM steps s
                 WHERE s.trial_id = t.id

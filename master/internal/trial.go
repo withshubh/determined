@@ -1036,8 +1036,7 @@ func classifyStatus(state terminatedContainerWithState) aproto.ContainerStopped 
 }
 
 func (t *trial) reset() error {
-	step := t.sequencer.RollBackSequencer()
-	if err := t.db.RollBackTrial(t.id, step); err != nil {
+	if err := t.db.RollBackTrial(t.id, t.sequencer.NextStepTotalBatch); err != nil {
 		return errors.Wrap(err, "failed to rollback trial in reset")
 	}
 	return nil

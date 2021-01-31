@@ -18,32 +18,23 @@ func (db *PgDB) AddCheckpoint(checkpoint *model.Checkpoint) error {
 	if !checkpoint.IsNew() {
 		return errors.Errorf("unexpected state for new checkpoint: %v", checkpoint)
 	}
-	step, err := db.StepByID(checkpoint.TrialID, checkpoint.StepID)
-	if err != nil {
-		return errors.Wrapf(err,
-			"error finding step (%v, %v) for new checkpoint", checkpoint.TrialID, checkpoint.StepID)
-	}
-	if step.State != model.CompletedState {
-		return errors.Errorf("unexpected state %v for trial %v step %v",
-			step.State, checkpoint.TrialID, checkpoint.StepID)
-	}
 	var count int
-	err = db.namedGet(&count, `
+	err := db.namedGet(&count, `
 SELECT COUNT(*)
 FROM checkpoints
 WHERE trial_id = :trial_id
-AND step_id = :step_id`, checkpoint)
+AND total_batch = :total_batch`, checkpoint)
 	if err != nil {
 		return errors.Wrapf(err, "error checking at-most-one checkpoint %v", *checkpoint)
 	}
 	if count > 0 {
-		return errors.Errorf("duplicate checkpoint for trial %v step %v",
-			checkpoint.TrialID, checkpoint.StepID)
+		return errors.Errorf("duplicate checkpoint for trial %v total batch %v",
+			checkpoint.TrialID, checkpoint.TotalBatch)
 	}
 	err = db.namedGet(&checkpoint.ID, `
 INSERT INTO checkpoints
-(trial_id, step_id, state, start_time, metadata, determined_version)
-VALUES (:trial_id, :step_id, :state, :start_time, :metadata, :determined_version)
+(trial_id, total_batch, state, start_time, metadata, determined_version)
+VALUES (:trial_id, :total_batch, :state, :start_time, :metadata, :determined_version)
 RETURNING id`, checkpoint)
 	if err != nil {
 		return errors.Wrapf(err, "error inserting checkpoint %v", *checkpoint)
@@ -51,18 +42,19 @@ RETURNING id`, checkpoint)
 	return nil
 }
 
-// CheckpointByStep looks up a checkpoint by trial and step ID, returning nil if none exists.
-func (db *PgDB) CheckpointByStep(trialID, stepID int) (*model.Checkpoint, error) {
+// CheckpointByTotalBatch looks up a checkpoint by trial and total batch,
+// returning nil if none exists.
+func (db *PgDB) CheckpointByTotalBatch(trialID, totalBatch int) (*model.Checkpoint, error) {
 	var checkpoint model.Checkpoint
 	if err := db.query(`
-SELECT id, trial_id, step_id, state, start_time, end_time, uuid, resources, metadata
+SELECT id, trial_id, total_batch, state, start_time, end_time, uuid, resources, metadata
 FROM checkpoints
 WHERE trial_id = $1
-AND step_id = $2`, &checkpoint, trialID, stepID); errors.Cause(err) == ErrNotFound {
+AND total_batch = $2`, &checkpoint, trialID, totalBatch); errors.Cause(err) == ErrNotFound {
 		return nil, nil
 	} else if err != nil {
 		return nil, errors.Wrapf(err, "error querying for checkpoint (%v, %v)",
-			trialID, stepID)
+			trialID, totalBatch)
 	}
 	return &checkpoint, nil
 }
@@ -71,7 +63,7 @@ AND step_id = $2`, &checkpoint, trialID, stepID); errors.Cause(err) == ErrNotFou
 func (db *PgDB) CheckpointByUUID(id uuid.UUID) (*model.Checkpoint, error) {
 	var checkpoint model.Checkpoint
 	if err := db.query(`
-SELECT id, trial_id, step_id, state, start_time, end_time, uuid, resources, metadata
+SELECT id, trial_id, total_batch, state, start_time, end_time, uuid, resources, metadata
 FROM checkpoints
 WHERE uuid = $1`, &checkpoint, id.String()); errors.Cause(err) == ErrNotFound {
 		return nil, nil
@@ -86,10 +78,10 @@ WHERE uuid = $1`, &checkpoint, id.String()); errors.Cause(err) == ErrNotFound {
 func (db *PgDB) LatestCheckpointForTrial(trialID int) (*model.Checkpoint, error) {
 	var checkpoint model.Checkpoint
 	if err := db.query(`
-SELECT id, trial_id, step_id, state, start_time, end_time, uuid, resources, metadata
+SELECT id, trial_id, total_batch, state, start_time, end_time, uuid, resources, metadata
 FROM checkpoints
 WHERE trial_id = $1 AND state = 'COMPLETED'
-ORDER BY step_id DESC
+ORDER BY total_batch DESC
 LIMIT 1`, &checkpoint, trialID); errors.Cause(err) == ErrNotFound {
 		return nil, nil
 	} else if err != nil {
@@ -102,7 +94,7 @@ LIMIT 1`, &checkpoint, trialID); errors.Cause(err) == ErrNotFound {
 // are not updated. end_time is set if the checkpoint moves to a terminal
 // state.
 func (db *PgDB) UpdateCheckpoint(
-	trialID, stepID int,
+	trialID, batchNum int,
 	newCheckpoint model.Checkpoint,
 ) error {
 	if len(newCheckpoint.State) == 0 && len(*newCheckpoint.UUID) == 0 &&
@@ -110,14 +102,14 @@ func (db *PgDB) UpdateCheckpoint(
 		return nil
 	}
 
-	checkpoint, err := db.CheckpointByStep(trialID, stepID)
+	checkpoint, err := db.CheckpointByTotalBatch(trialID, batchNum)
 	if err != nil {
 		return errors.Wrapf(err, "error querying for checkpoint (%v, %v) to update",
-			trialID, stepID)
+			trialID, batchNum)
 	}
 	if checkpoint == nil {
 		return errors.Wrapf(err, "can't update missing checkpoint (%v, %v)",
-			trialID, stepID)
+			trialID, batchNum)
 	}
 
 	toUpdate := []string{}
@@ -137,7 +129,7 @@ func (db *PgDB) UpdateCheckpoint(
 	if newCheckpoint.UUID != nil && len(*newCheckpoint.UUID) != 0 {
 		if checkpoint.UUID != nil && len(*checkpoint.UUID) != 0 {
 			return errors.Errorf("checkpoint (%v, %v) already has UUID",
-				trialID, stepID)
+				trialID, batchNum)
 		}
 		checkpoint.UUID = newCheckpoint.UUID
 		toUpdate = append(toUpdate, "uuid")
@@ -145,7 +137,7 @@ func (db *PgDB) UpdateCheckpoint(
 	if len(newCheckpoint.Resources) != 0 {
 		if len(checkpoint.Resources) != 0 {
 			return errors.Errorf("checkpoint (%v, %v) already has resources",
-				trialID, stepID)
+				trialID, batchNum)
 		}
 		checkpoint.Resources = newCheckpoint.Resources
 		toUpdate = append(toUpdate, "resources")
@@ -164,7 +156,7 @@ func (db *PgDB) UpdateCheckpoint(
 
 	if len(newCheckpoint.Framework) != 0 {
 		if len(checkpoint.Framework) != 0 {
-			return errors.Errorf("checkpoint (%v, %v) already has a framework", trialID, stepID)
+			return errors.Errorf("checkpoint (%v, %v) already has a framework", trialID, batchNum)
 		}
 
 		checkpoint.Framework = newCheckpoint.Framework
@@ -173,7 +165,7 @@ func (db *PgDB) UpdateCheckpoint(
 
 	if len(newCheckpoint.Format) != 0 {
 		if len(checkpoint.Format) != 0 {
-			return errors.Errorf("checkpoint (%v, %v) already has a format", trialID, stepID)
+			return errors.Errorf("checkpoint (%v, %v) already has a format", trialID, batchNum)
 		}
 
 		checkpoint.Format = newCheckpoint.Format
@@ -183,10 +175,10 @@ func (db *PgDB) UpdateCheckpoint(
 	err = db.namedExecOne(fmt.Sprintf(`
 UPDATE checkpoints
 %v
-WHERE id = :id`, setClause(toUpdate)), checkpoint)
+WHERE trial_id = :trial_id AND total_batch = :total_batch`, setClause(toUpdate)), checkpoint)
 	if err != nil {
 		return errors.Wrapf(err, "error updating (%v) in checkpoint (%v, %v)",
-			strings.Join(toUpdate, ", "), trialID, stepID)
+			strings.Join(toUpdate, ", "), trialID, batchNum)
 	}
 	return nil
 }

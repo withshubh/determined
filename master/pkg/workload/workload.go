@@ -30,6 +30,11 @@ type Workload struct {
 	TotalBatchesProcessed int  `json:"total_batches_processed"`
 }
 
+// TotalBatch returns the total batch number after the workload is processed.
+func (w Workload) TotalBatch() int {
+	return w.NumBatches + w.TotalBatchesProcessed
+}
+
 func (w Workload) String() string {
 	var extra string
 	if w.Kind == RunStep {

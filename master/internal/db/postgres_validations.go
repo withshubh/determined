@@ -24,32 +24,23 @@ func (db *PgDB) AddValidation(validation *model.Validation) error {
 	if trial.State != model.ActiveState {
 		return errors.Errorf("can't add validation to trial %v with state %v", trial.ID, trial.State)
 	}
-	step, err := db.StepByID(validation.TrialID, validation.StepID)
-	if err != nil {
-		return errors.Wrapf(err,
-			"error finding step (%v, %v) to add validation", validation.TrialID, validation.StepID)
-	}
-	if step.State != model.CompletedState {
-		return errors.Errorf("unexpected state %v for trial %v step %v",
-			step.State, validation.TrialID, validation.StepID)
-	}
 	var count int
 	err = db.namedGet(&count, `
 SELECT COUNT(*)
 FROM validations
 WHERE trial_id = :trial_id
-AND step_id = :step_id`, validation)
+AND total_batch = :total_batch`, validation)
 	if err != nil {
 		return errors.Wrapf(err, "error checking at-most-one validation %v", *validation)
 	}
 	if count > 0 {
-		return errors.Errorf("duplicate validation for trial %v step %v",
-			validation.TrialID, validation.StepID)
+		return errors.Errorf("duplicate validation for trial %v total batch %v",
+			validation.TrialID, validation.TotalBatch)
 	}
 	err = db.namedGet(&validation.ID, `
 INSERT INTO validations
-(trial_id, step_id, state, start_time, end_time)
-VALUES (:trial_id, :step_id, :state, :start_time, :end_time)
+(trial_id, total_batch, state, start_time, end_time)
+VALUES (:trial_id, :total_batch, :state, :start_time, :end_time)
 RETURNING id`, validation)
 	if err != nil {
 		return errors.Wrapf(err, "error inserting validation %v", *validation)
@@ -57,18 +48,18 @@ RETURNING id`, validation)
 	return nil
 }
 
-// ValidationByStep looks up a validation by trial and step ID, returning nil if none exists.
-func (db *PgDB) ValidationByStep(trialID, stepID int) (*model.Validation, error) {
+// ValidationByTotalBatch looks up a validation by trial and step ID, returning nil if none exists.
+func (db *PgDB) ValidationByTotalBatch(trialID, batchNum int) (*model.Validation, error) {
 	var validation model.Validation
 	if err := db.query(`
-SELECT id, trial_id, step_id, state, start_time, end_time, metrics
+SELECT id, trial_id, total_batch, state, start_time, end_time, metrics
 FROM validations
 WHERE trial_id = $1
-AND step_id = $2`, &validation, trialID, stepID); errors.Cause(err) == ErrNotFound {
+AND total_batch = $2`, &validation, trialID, batchNum); errors.Cause(err) == ErrNotFound {
 		return nil, nil
 	} else if err != nil {
 		return nil, errors.Wrapf(err, "error querying for validation (%v, %v)",
-			trialID, stepID)
+			trialID, batchNum)
 	}
 	return &validation, nil
 }
@@ -76,19 +67,20 @@ AND step_id = $2`, &validation, trialID, stepID); errors.Cause(err) == ErrNotFou
 // UpdateValidation updates an existing validation. Fields that are nil or zero
 // are not updated. end_time is set if the validation moves to a terminal
 // state.
-func (db *PgDB) UpdateValidation(trialID, stepID int, newState model.State, metrics model.JSONObj,
+func (db *PgDB) UpdateValidation(
+	trialID, totalBatch int, newState model.State, metrics model.JSONObj,
 ) error {
 	if len(newState) == 0 && len(metrics) == 0 {
 		return nil
 	}
-	validation, err := db.ValidationByStep(trialID, stepID)
+	validation, err := db.ValidationByTotalBatch(trialID, totalBatch)
 	if err != nil {
 		return errors.Wrapf(err, "error querying for validation (%v, %v) to update",
-			trialID, stepID)
+			trialID, totalBatch)
 	}
 	if validation == nil {
 		return errors.Wrapf(err, "can't update missing validation (%v, %v)",
-			trialID, stepID)
+			trialID, totalBatch)
 	}
 	toUpdate := []string{}
 	if len(newState) != 0 {
@@ -107,7 +99,7 @@ func (db *PgDB) UpdateValidation(trialID, stepID int, newState model.State, metr
 	if len(metrics) != 0 {
 		if len(validation.Metrics) != 0 {
 			return errors.Errorf("validation (%v, %v) already has metrics",
-				trialID, stepID)
+				trialID, totalBatch)
 		}
 		validation.Metrics = metrics
 		toUpdate = append(toUpdate, "metrics")
@@ -115,10 +107,10 @@ func (db *PgDB) UpdateValidation(trialID, stepID int, newState model.State, metr
 	err = db.namedExecOne(fmt.Sprintf(`
 UPDATE validations
 %v
-WHERE id = :id`, setClause(toUpdate)), validation)
+WHERE total_batch = :total_batch`, setClause(toUpdate)), validation)
 	if err != nil {
 		return errors.Wrapf(err, "error updating (%v) in validation (%v, %v)",
-			strings.Join(toUpdate, ", "), trialID, stepID)
+			strings.Join(toUpdate, ", "), trialID, totalBatch)
 	}
 	return nil
 }

@@ -26,9 +26,11 @@ func (db *PgDB) AddStep(step *model.Step) error {
 	}
 	err = db.namedExecOne(`
 INSERT INTO steps
-(trial_id, id, state, start_time, end_time, num_batches, prior_batches_processed)
-VALUES (:trial_id, :id, :state, :start_time, :end_time, :num_batches, :prior_batches_processed)`,
-		step)
+(trial_id, id, total_batch, state, start_time, end_time, num_batches, prior_batches_processed)
+VALUES (
+	:trial_id, :id, :total_batch, :state, :start_time, :end_time, 
+	:num_batches, :prior_batches_processed
+)`, step)
 	if err != nil {
 		return errors.Wrapf(err, "error inserting step %v", *step)
 	}
@@ -50,8 +52,11 @@ func (db *PgDB) AddNoOpStep(step *model.Step) error {
 	}
 	err = db.namedExecOne(`
 INSERT INTO steps
-(trial_id, id, state, start_time, end_time, num_batches, prior_batches_processed)
-VALUES (:trial_id, :id, :state, :start_time, :end_time, :num_batches, :prior_batches_processed)`,
+(trial_id, id, total_batch, state, start_time, end_time, num_batches, prior_batches_processed)
+VALUES (
+	:trial_id, :id, :total_batch, :state, :start_time, :end_time, 
+	:num_batches, :prior_batches_processed
+)`,
 		step)
 	if err != nil {
 		return errors.Wrapf(err, "error inserting step %v", *step)
@@ -59,14 +64,17 @@ VALUES (:trial_id, :id, :state, :start_time, :end_time, :num_batches, :prior_bat
 	return nil
 }
 
-// StepByID looks up a step by (TrialID, StepID) pair, returning an error if none exists.
-func (db *PgDB) StepByID(trialID, stepID int) (*model.Step, error) {
+// StepByTotalBatch looks up a step by (TrialID, TotalBatch) pair,
+// returning an error if none exists.
+func (db *PgDB) StepByTotalBatch(trialID, totalBatch int) (*model.Step, error) {
 	var step model.Step
 	if err := db.query(`
-SELECT trial_id, id, state, start_time, end_time, metrics, num_batches, prior_batches_processed
+SELECT 
+	trial_id, id, total_batch, state, start_time, end_time, metrics, 
+	num_batches, prior_batches_processed
 FROM steps
-WHERE trial_id = $1 AND id = $2`, &step, trialID, stepID); err != nil {
-		return nil, errors.Wrapf(err, "error querying for step %v, %v", trialID, stepID)
+WHERE trial_id = $1 AND total_batch = $2`, &step, trialID, totalBatch); err != nil {
+		return nil, errors.Wrapf(err, "error querying for step %v, %v", trialID, totalBatch)
 	}
 	return &step, nil
 }
@@ -74,19 +82,19 @@ WHERE trial_id = $1 AND id = $2`, &step, trialID, stepID); err != nil {
 // UpdateStep updates an existing step. Fields that are nil or zero are not
 // updated.  end_time is set if the step moves to a terminal state.
 func (db *PgDB) UpdateStep(
-	trialID, stepID int, newState model.State, metrics model.JSONObj) error {
+	trialID, totalBatch int, newState model.State, metrics model.JSONObj) error {
 	if len(newState) == 0 && len(metrics) == 0 {
 		return nil
 	}
-	step, err := db.StepByID(trialID, stepID)
+	step, err := db.StepByTotalBatch(trialID, totalBatch)
 	if err != nil {
-		return errors.Wrapf(err, "error finding step (%v, %v) to update", trialID, stepID)
+		return errors.Wrapf(err, "error finding step (%v, %v) to update", trialID, totalBatch)
 	}
 	toUpdate := []string{}
 	if len(newState) != 0 {
 		if !model.StepTransitions[step.State][newState] {
 			return errors.Errorf("illegal transition %v -> %v for step (%v, %v)",
-				step.State, newState, step.TrialID, step.ID)
+				step.State, newState, step.TrialID, step.TotalBatch)
 		}
 		step.State = newState
 		toUpdate = append(toUpdate, "state")
@@ -98,7 +106,7 @@ func (db *PgDB) UpdateStep(
 	}
 	if len(metrics) != 0 {
 		if len(step.Metrics) != 0 {
-			return errors.Errorf("step (%v, %v) already has metrics", trialID, stepID)
+			return errors.Errorf("step (%v, %v) already has metrics", trialID, totalBatch)
 		}
 		step.Metrics = metrics
 		toUpdate = append(toUpdate, "metrics")
@@ -107,10 +115,10 @@ func (db *PgDB) UpdateStep(
 UPDATE steps
 %v
 WHERE trial_id = :trial_id
-AND id = :id`, setClause(toUpdate)), step)
+AND total_batch = :total_batch`, setClause(toUpdate)), step)
 	if err != nil {
 		return errors.Wrapf(err, "error updating (%v) in step (%v, %v)",
-			strings.Join(toUpdate, ", "), step.TrialID, step.ID)
+			strings.Join(toUpdate, ", "), step.TrialID, step.TotalBatch)
 	}
 	return nil
 }

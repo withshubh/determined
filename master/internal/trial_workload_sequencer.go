@@ -21,6 +21,7 @@ type (
 		BatchesSinceLastVal     int `json:"batches_since_last_val"`
 		BatchesSinceLastCkpt    int `json:"batches_since_last_chkp"`
 		TotalBatchesProcessed   int `json:"total_batches_processed"`
+		NextStepTotalBatch      int `json:"next_step_total_batch"`
 
 		NeedInitialValidation  bool `json:"need_initial_validation"`
 		NeedPostValidationCkpt bool `json:"need_post_validation_ckpt"`
@@ -327,6 +328,7 @@ func (s trialWorkloadSequencer) Workload() (workload.Workload, error) {
 			batchesTilCkpt,
 			s.schedulingUnit,
 		), 1)
+		s.NextStepTotalBatch = batchesThisStep + s.TotalBatchesProcessed
 		return s.train(batchesThisStep), nil
 	default:
 		return workload.Workload{}, errors.New("unexpected op type determining workload")

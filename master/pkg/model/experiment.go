@@ -3,16 +3,16 @@ package model
 import (
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/golang/protobuf/ptypes"
-
-	"github.com/determined-ai/determined/proto/pkg/logv1"
-
 	"github.com/pkg/errors"
 
 	"github.com/determined-ai/determined/master/version"
 	"github.com/determined-ai/determined/proto/pkg/apiv1"
+	"github.com/determined-ai/determined/proto/pkg/checkpointv1"
+	"github.com/determined-ai/determined/proto/pkg/logv1"
 )
 
 // State is the run state of an experiment / trial / step / etc.
@@ -296,6 +296,7 @@ func NewTrial(
 type Step struct {
 	TrialID               int        `db:"trial_id"`
 	ID                    int        `db:"id"`
+	TotalBatch            int        `db:"total_batch"`
 	State                 State      `db:"state"`
 	StartTime             time.Time  `db:"start_time"`
 	EndTime               *time.Time `db:"end_time"`
@@ -309,6 +310,7 @@ func NewStep(trialID, stepID, numBatches, priorBatchesProcessed int) *Step {
 	return &Step{
 		TrialID:               trialID,
 		ID:                    stepID,
+		TotalBatch:            numBatches + priorBatchesProcessed,
 		State:                 ActiveState,
 		StartTime:             time.Now().UTC(),
 		NumBatches:            numBatches,
@@ -337,22 +339,22 @@ func (s *Step) IsNew() bool {
 
 // Validation represents a row from the `validations` table.
 type Validation struct {
-	ID        int        `db:"id" json:"id"`
-	TrialID   int        `db:"trial_id" json:"trial_id"`
-	StepID    int        `db:"step_id" json:"step_id"`
-	State     State      `db:"state" json:"state"`
-	StartTime time.Time  `db:"start_time" json:"start_time"`
-	EndTime   *time.Time `db:"end_time" json:"end_time"`
-	Metrics   JSONObj    `db:"metrics" json:"metrics"`
+	ID         int        `db:"id" json:"id"`
+	TrialID    int        `db:"trial_id" json:"trial_id"`
+	TotalBatch int        `db:"total_batch" json:"total_batch"`
+	State      State      `db:"state" json:"state"`
+	StartTime  time.Time  `db:"start_time" json:"start_time"`
+	EndTime    *time.Time `db:"end_time" json:"end_time"`
+	Metrics    JSONObj    `db:"metrics" json:"metrics"`
 }
 
 // NewValidation creates a new validation in the active state.
-func NewValidation(trialID, stepID int) *Validation {
+func NewValidation(trialID, totalBatch int) *Validation {
 	return &Validation{
-		TrialID:   trialID,
-		StepID:    stepID,
-		State:     ActiveState,
-		StartTime: time.Now().UTC(),
+		TrialID:    trialID,
+		TotalBatch: totalBatch,
+		State:      ActiveState,
+		StartTime:  time.Now().UTC(),
 	}
 }
 
@@ -365,7 +367,7 @@ func (v *Validation) IsNew() bool {
 type Checkpoint struct {
 	ID                int        `db:"id" json:"id"`
 	TrialID           int        `db:"trial_id" json:"trial_id"`
-	StepID            int        `db:"step_id" json:"step_id"`
+	TotalBatch        int        `db:"total_batch" json:"total_batch"`
 	State             State      `db:"state" json:"state"`
 	StartTime         time.Time  `db:"start_time" json:"start_time"`
 	EndTime           *time.Time `db:"end_time" json:"end_time"`
@@ -378,14 +380,53 @@ type Checkpoint struct {
 }
 
 // NewCheckpoint creates a new checkpoint in the active state.
-func NewCheckpoint(trialID, stepID int) *Checkpoint {
+func NewCheckpoint(trialID, totalBatch int) *Checkpoint {
 	return &Checkpoint{
 		TrialID:           trialID,
-		StepID:            stepID,
+		TotalBatch:        totalBatch,
 		State:             ActiveState,
 		StartTime:         time.Now().UTC(),
 		Metadata:          JSONObj{},
 		DeterminedVersion: version.Version,
+	}
+}
+
+// CheckpointFromProto returns a checkpoint db model made from the protobuf model.
+func CheckpointFromProto(proto *checkpointv1.Checkpoint) *Checkpoint {
+	startTime, err := ptypes.Timestamp(proto.StartTime)
+	if err != nil {
+		panic(errors.Wrap(err, "cannot convert starttime field for checkpoint"))
+	}
+
+	endTime, err := ptypes.Timestamp(proto.EndTime)
+	if err != nil {
+		panic(errors.Wrap(err, "cannot convert endtime field for checkpoint"))
+	}
+
+	uuid := proto.Uuid
+
+	resources := make(map[string]interface{})
+	for k, v := range proto.Resources {
+		resources[k] = v
+	}
+
+	metadata := make(map[string]interface{})
+	for k, v := range proto.Metadata.Fields {
+		metadata[k] = v
+	}
+
+	return &Checkpoint{
+		TrialID:           int(proto.TrialId),
+		TotalBatch:        int(proto.BatchNumber),
+		State:             State(strings.TrimPrefix(proto.State.String(), "STATE_")),
+		StartTime:         startTime,
+		EndTime:           &endTime,
+		UUID:              &uuid,
+		Resources:         resources,
+		Metadata:          metadata,
+		Framework:         proto.Framework,
+		Format:            proto.Format,
+		DeterminedVersion: proto.DeterminedVersion,
 	}
 }
 
