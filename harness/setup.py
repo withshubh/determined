@@ -17,8 +17,6 @@ setup(
         "cloudpickle==0.5.3",
         "determined-common==0.13.14.dev0",
         "dill>=0.2.9",
-        # TF 2.2 has strict h5py requirements, which we expose here.
-        "h5py>=2.10.0,<2.11.0",
         "matplotlib",
         "packaging",
         "numpy>=1.16.2",
