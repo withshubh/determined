@@ -1727,7 +1727,7 @@ workflows:
       - request-gpu-tests:
           type: approval
           filters: *upstream-feature-branch
-      
+
       - test-e2e-aws:
           name: test-e2e-gpu-parallel
           context: aws
@@ -1755,8 +1755,7 @@ workflows:
             parameters:
               parallelism: [2]
               cluster-id-prefix: ["e2e-gpu"]
-              enable-tls: [true]
-              mark: ["e2e_gpu"]
+              mark: ["nightly"]
               slack-mentions: ["${SLACK_USER_ID}"]
 
       - test-e2e-gke:
