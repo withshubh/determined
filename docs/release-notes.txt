@@ -46,7 +46,7 @@ Version 0.14.0
    JSON objects or `protobuf structs
    <https://developers.google.com/protocol-buffers/docs/reference/google.protobuf#google.protobuf.Struct>`__.
 
--  Documentation: Add a topic guide on :ref:`debugging models
+-  Documentation: Add a how-to guide on :ref:`debugging models
    <model-debug>`. The new guide will walk you step-by-step through
    solving problems with a model in Determined, with a focus on testing
    features incrementally until the model is fully working. It may also
