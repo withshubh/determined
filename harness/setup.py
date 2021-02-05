@@ -19,6 +19,8 @@ setup(
         "dill>=0.2.9",
         "matplotlib",
         "packaging",
+        # TF 2.2 has strict h5py requirements, which we expose here.
+        "h5py>=2.10.0,<2.11.0",
         "numpy>=1.16.2",
         "psutil",
         "pyzmq>=18.1.0",
