@@ -1282,7 +1282,7 @@ jobs:
         type: string
       gpu-agent-instance-type:
         type: string
-        default: p2.xlarge
+        default: p3.8xlarge
       cpu-agent-instance-type:
         type: string
         default: m5.large
