@@ -103,7 +103,7 @@ class SocketManager(workload.Source):
         elif isinstance(event, lomond.events.Closing):
             logging.info("Server started WebSocket shutdown: %s", event.reason)
         elif isinstance(event, lomond.events.Closed):
-            logging.info("WebSocket closed" + (f": {event.reason}" if event.reason else ""))
+            logging.info("WebSocket closed", (f": {event.reason}" if event.reason else ""))
         elif isinstance(event, lomond.events.Disconnected):
             # The event loop will exit after this event is received.
             if event.graceful:
