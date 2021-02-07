@@ -275,7 +275,7 @@ class DARTSRNNTrial(PyTorchTrial):
         self._last_loss = total_loss
         best_loss = min(
             total_loss,
-            float("inf") if not len(self._eval_history) else min(self._eval_history),
+            float("inf") if not self._eval_history else min(self._eval_history),
         )
         self._eval_history.append(best_loss)
 
