@@ -245,7 +245,7 @@ class _TrialWorkloadManager(WorkloadManager):
                 if isinstance(metric_value, (bytes, bytearray)):
                     non_serializable_metrics.add(metric_name)
 
-            if len(non_serializable_metrics):
+            if non_serializable_metrics:
                 logging.warning(
                     "Removed non serializable metrics: %s", ", ".join(non_serializable_metrics)
                 )

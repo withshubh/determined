@@ -266,7 +266,7 @@ class _ParallelEnqueuer(_Enqueuer):
     def one_epoch(self) -> Iterator:
         self.index_iter = self.sampler.yield_epoch()
         self.fill_requests()
-        while len(self.requested):
+        while self.requested:
             # Block on recieving the next in-order data.
             target = self.requested.popleft()
             while target not in self.received:
