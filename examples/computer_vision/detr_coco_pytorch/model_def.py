@@ -42,10 +42,8 @@ class DETRTrial(PyTorchTrial):
         if self.hparams.backend == "local":
             if self.context.distributed.get_local_rank() == 0:
                 if not all(
-                    [
-                        os.path.isdir(os.path.join(self.hparams.data_dir, d))
+                    os.path.isdir(os.path.join(self.hparams.data_dir, d))
                         for d in ["train2017", "val2017"]
-                    ]
                 ):
                     download_coco_from_source(self.hparams.data_dir)
             else:
