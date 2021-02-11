@@ -164,7 +164,7 @@ class TokenStore:
         self._create_det_path_if_necessary()
         cache_path = self._get_token_cache_path()
         store = {}
-        if self._tokens is not None and self._tokens:
+        if self._tokens is not None and len(self._tokens):
             store["tokens"] = self._tokens
 
         if self._active_user is not None:

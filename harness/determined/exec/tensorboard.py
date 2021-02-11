@@ -57,7 +57,7 @@ def wait_for_tensorboard(max_seconds: float, url: str, still_alive_fn: Callable[
             continue
 
         for val in tags.values():
-            if val:
+            if len(val):
                 print("TensorBoard contains metrics")
                 return True
 
