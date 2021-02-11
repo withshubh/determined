@@ -92,7 +92,7 @@ class OmniglotTasks(Dataset):
                     img = Image.open(f).resize(
                         (self.img_resize_dim, self.img_resize_dim)
                     )
-                    if self.rotations:
+                    if len(self.rotations):
                         rot = rotations[i]
                         img = img.rotate(rot)
                     img = np.array(img).astype(np.float32)
